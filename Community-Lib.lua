@@ -104,6 +104,14 @@ local function ParseColor(text)
 	end
 end
 
+local function Brighten(color, amount)
+	return Color3.fromRGB(
+		math.clamp(color.R * 255 + amount, 0, 255),
+		math.clamp(color.G * 255 + amount, 0, 255),
+		math.clamp(color.B * 255 + amount, 0, 255)
+	)
+end
+
 local function ToHex(color)
 	return string.format("#%02X%02X%02X", math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5))
 end
@@ -350,8 +358,17 @@ function Lib:MakeWindow(Configs)
 	S.FontColor = ParseColor(Cfg.fontColor) and Cfg.fontColor or ToHex(Th.Text)
 	Cfg.buttons = type(Cfg.buttons) == "table" and Cfg.buttons or {}
 
+	local MIN_W, MIN_H, MAX_W, MAX_H = 430, 220, 1000, 500
 	local W, H = S.UISize[1], S.UISize[2]
-	local TOP, SIDE = 32, 110
+	if type(Cfg.size) == "table" and tonumber(Cfg.size[1]) and tonumber(Cfg.size[2]) then
+		W, H = Cfg.size[1], Cfg.size[2]
+	end
+	W = math.clamp(W, MIN_W, MAX_W)
+	H = math.clamp(H, MIN_H, MAX_H)
+
+	local TOP, SIDE = 28, 135
+	local PAGE_TITLE = 28
+	local MARGIN = 12
 
 	local Window = {}
 	local Conns = {}
@@ -391,10 +408,6 @@ function Lib:MakeWindow(Configs)
 		Parent = parent,
 	})
 
-	local function PanelT()
-		return math.clamp(S.Transparency + 0.55, 0, 0.95)
-	end
-
 	local function Bind(inst, fn)
 		fn()
 		table.insert(Binds, {inst, fn})
@@ -417,25 +430,16 @@ function Lib:MakeWindow(Configs)
 		end)
 	end
 
-	local function BindPanel(frame)
-		Bind(frame, function()
-			frame.BackgroundColor3 = Th.Hub2
-			frame.BackgroundTransparency = PanelT()
-		end)
-	end
-
-	local function BindAccent(frame, transparency)
+	local function BindSub(frame, transparency)
 		Bind(frame, function()
 			frame.BackgroundColor3 = Th.Accent
-			if transparency then
-				frame.BackgroundTransparency = transparency
-			end
+			frame.BackgroundTransparency = transparency or 0.85
 		end)
 	end
 
-	local function Stroke(parentObj, key)
+	local function Stroke(parentObj, key, thickness)
 		local stroke = New("UIStroke", {
-			Thickness = 1,
+			Thickness = thickness or 1,
 			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 			Parent = parentObj,
 		})
@@ -455,17 +459,22 @@ function Lib:MakeWindow(Configs)
 		Parent = Gui,
 	})
 	local MainScale = New("UIScale", {Parent = Main})
-	local MainGradient = New("UIGradient", {Parent = Main})
+	local MainGradient = New("UIGradient", {Rotation = 45, Parent = Main})
 	Corner(Main, 7)
-	Stroke(Main)
+	local MainStroke = New("UIStroke", {
+		Thickness = 1.5,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Parent = Main,
+	})
 	Bind(Main, function()
 		Main.BackgroundTransparency = S.Transparency
 		MainGradient.Color = Th.Hub1
+		MainStroke.Color = Brighten(Th.Stroke, 55)
 	end)
 
 	local function ApplyScale()
 		local view = workspace.CurrentCamera.ViewportSize
-		MainScale.Scale = math.clamp(math.min(view.X / S.Scale, view.Y / (H + 24)), 0.5, 1)
+		MainScale.Scale = math.clamp(math.min(view.X / S.Scale, view.Y / (S.UISize[2] + 24)), 0.5, 1)
 	end
 	ApplyScale()
 	Connect(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), ApplyScale)
@@ -477,22 +486,22 @@ function Lib:MakeWindow(Configs)
 	})
 
 	local TitleRow = New("Frame", {
-		Size = UDim2.new(1, -110, 1, 0),
-		Position = UDim2.fromOffset(12, 0),
+		Position = UDim2.fromOffset(15, 0),
+		Size = UDim2.new(1, -80, 1, 0),
 		BackgroundTransparency = 1,
 		Parent = Top,
 	}, {
 		New("UIListLayout", {
 			FillDirection = Enum.FillDirection.Horizontal,
 			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 6),
+			Padding = UDim.new(0, 8),
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		}),
 	})
 
 	local NameLabel = New("TextLabel", {
 		LayoutOrder = 1,
-		Size = UDim2.fromOffset(0, 16),
+		Size = UDim2.fromOffset(0, 28),
 		AutomaticSize = Enum.AutomaticSize.X,
 		BackgroundTransparency = 1,
 		Font = Font.GothamBold,
@@ -500,94 +509,45 @@ function Lib:MakeWindow(Configs)
 		Text = Name,
 		Parent = TitleRow,
 	})
-	BindText(NameLabel)
+	Bind(NameLabel, function()
+		NameLabel.TextColor3 = Brighten(Th.Accent, 60)
+	end)
 
 	local SubLabel = New("TextLabel", {
 		LayoutOrder = 2,
-		Size = UDim2.fromOffset(0, 16),
+		Size = UDim2.fromOffset(0, 28),
 		AutomaticSize = Enum.AutomaticSize.X,
 		BackgroundTransparency = 1,
-		Font = Font.GothamMedium,
-		TextSize = 10,
+		Font = Font.Gotham,
+		TextSize = 8,
 		Text = SubTitle,
 		Visible = SubTitle ~= "",
 		Parent = TitleRow,
 	})
 	BindText(SubLabel, "Dark")
 
-	local TopLine = New("Frame", {
-		Size = UDim2.new(1, 0, 0, 1),
-		Position = UDim2.fromOffset(0, TOP),
-		BorderSizePixel = 0,
-		Parent = Main,
-	})
-	Bind(TopLine, function()
-		TopLine.BackgroundColor3 = Th.Stroke
-	end)
-
-	local Buttons = New("Frame", {
+	local CloseButton = New("ImageButton", {
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -8, 0.5, 0),
-		Size = UDim2.fromOffset(86, 26),
+		Position = UDim2.new(1, -10, 0.5, 0),
+		Size = UDim2.fromOffset(14, 14),
 		BackgroundTransparency = 1,
+		Image = "rbxassetid://10747384394",
+		AutoButtonColor = false,
 		Parent = Top,
-	}, {
-		New("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Right,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 4),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-		}),
 	})
-
-	local function IconButton(order)
-		local b = New("TextButton", {
-			LayoutOrder = order,
-			Size = UDim2.fromOffset(26, 26),
-			BackgroundColor3 = WHITE,
-			BackgroundTransparency = 1,
-			Text = "",
-			AutoButtonColor = false,
-			Parent = Buttons,
-		})
-		Corner(b, 5)
-		Connect(b.MouseEnter, function()
-			Tween(b, {BackgroundTransparency = 0.88}, 0.15)
-		end)
-		Connect(b.MouseLeave, function()
-			Tween(b, {BackgroundTransparency = 1}, 0.15)
-		end)
-		return b
-	end
-
-	local function IconPart(parentObj, size, position, rotation)
-		local part = New("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = position,
-			Size = size,
-			Rotation = rotation or 0,
-			BorderSizePixel = 0,
-			Parent = parentObj,
-		})
-		Bind(part, function()
-			part.BackgroundColor3 = Th.Text
-		end)
-		return part
-	end
-
-	local DotsButton = IconButton(1)
-	for i = -1, 1 do
-		local dot = IconPart(DotsButton, UDim2.fromOffset(3, 3), UDim2.new(0.5, i * 5, 0.5, 0))
-		Corner(dot, 2)
-	end
-
-	local MinButton = IconButton(2)
-	IconPart(MinButton, UDim2.fromOffset(10, 2), UDim2.fromScale(0.5, 0.5))
-
-	local CloseButton = IconButton(3)
-	IconPart(CloseButton, UDim2.fromOffset(12, 2), UDim2.fromScale(0.5, 0.5), 45)
-	IconPart(CloseButton, UDim2.fromOffset(12, 2), UDim2.fromScale(0.5, 0.5), -45)
+	local MinButton = New("ImageButton", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -35, 0.5, 0),
+		Size = UDim2.fromOffset(14, 14),
+		BackgroundTransparency = 1,
+		Image = "rbxassetid://10734896206",
+		AutoButtonColor = false,
+		Parent = Top,
+	})
+	Bind(CloseButton, function()
+		CloseButton.ImageColor3 = Th.Text
+		MinButton.ImageColor3 = Th.Text
+	end)
 
 	local dragging, dragStart, dragOrigin
 	Connect(Top.InputBegan, function(input)
@@ -612,50 +572,46 @@ function Lib:MakeWindow(Configs)
 	end)
 
 	local Body = New("Frame", {
-		Position = UDim2.fromOffset(0, TOP + 1),
-		Size = UDim2.new(1, 0, 1, -(TOP + 1)),
+		Position = UDim2.fromOffset(0, TOP),
+		Size = UDim2.new(1, 0, 1, -TOP),
 		BackgroundTransparency = 1,
 		ClipsDescendants = true,
 		Parent = Main,
 	})
 
-	local Sidebar = New("Frame", {
+	local TabList = New("ScrollingFrame", {
 		Size = UDim2.new(0, SIDE, 1, 0),
 		BackgroundTransparency = 1,
-		Parent = Body,
-	})
-	local SideLine = New("Frame", {
-		Position = UDim2.fromOffset(SIDE, 0),
-		Size = UDim2.new(0, 1, 1, 0),
 		BorderSizePixel = 0,
+		ScrollBarThickness = 0,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
 		Parent = Body,
-	})
-	Bind(SideLine, function()
-		SideLine.BackgroundColor3 = Th.Stroke
-	end)
-
-	local TabList = New("Frame", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Parent = Sidebar,
 	}, {
-		New("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}),
-		New("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}),
+		New("UIPadding", {
+			PaddingLeft = UDim.new(0, 5),
+			PaddingRight = UDim.new(0, 6),
+			PaddingTop = UDim.new(0, 5),
+			PaddingBottom = UDim.new(0, 10),
+		}),
+		New("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}),
 	})
 
 	local Content = New("Frame", {
-		Position = UDim2.fromOffset(SIDE + 1, 0),
-		Size = UDim2.new(1, -(SIDE + 1), 1, 0),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.new(1, -SIDE, 1, 0),
 		BackgroundTransparency = 1,
+		ClipsDescendants = true,
 		Parent = Body,
 	})
 
 	local PageTitle = New("TextLabel", {
-		Position = UDim2.fromOffset(10, 6),
-		Size = UDim2.new(0.5, 0, 0, 18),
+		Position = UDim2.fromOffset(MARGIN, 5),
+		Size = UDim2.new(0.5, 0, 0, 23),
 		BackgroundTransparency = 1,
 		Font = Font.GothamBold,
-		TextSize = 13,
+		TextSize = 17,
 		TextXAlignment = AlignLeft,
 		Text = "",
 		Parent = Content,
@@ -664,11 +620,11 @@ function Lib:MakeWindow(Configs)
 
 	local StatusLabel = New("TextLabel", {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -10, 0, 6),
-		Size = UDim2.new(0.4, 0, 0, 18),
+		Position = UDim2.new(1, -MARGIN, 0, 5),
+		Size = UDim2.new(0.4, 0, 0, 23),
 		BackgroundTransparency = 1,
-		Font = Font.GothamMedium,
-		TextSize = 10,
+		Font = Font.Gotham,
+		TextSize = 9,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Text = "Connecting...",
 		Parent = Content,
@@ -681,13 +637,13 @@ function Lib:MakeWindow(Configs)
 	local function MakeTab(name, order)
 		local btn = New("TextButton", {
 			LayoutOrder = order,
-			Size = UDim2.new(1, 0, 0, 24),
+			Size = UDim2.new(1, 0, 0, 23),
 			BackgroundTransparency = 1,
 			Text = "",
 			AutoButtonColor = false,
 			Parent = TabList,
 		})
-		Corner(btn, 4)
+		Corner(btn, 3)
 		Bind(btn, function()
 			btn.BackgroundColor3 = Th.Accent
 		end)
@@ -699,24 +655,27 @@ function Lib:MakeWindow(Configs)
 			BorderSizePixel = 0,
 			Parent = btn,
 		})
-		Corner(bar, 2)
-		BindAccent(bar)
+		Corner(bar, 4)
+		Bind(bar, function()
+			bar.BackgroundColor3 = Th.Accent
+		end)
 
 		local label = New("TextLabel", {
-			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(1, -16, 1, 0),
+			Position = UDim2.fromOffset(14, 0),
+			Size = UDim2.new(1, -22, 1, 0),
 			BackgroundTransparency = 1,
 			Font = Font.GothamBold,
-			TextSize = 11,
+			TextSize = 10,
 			TextXAlignment = AlignLeft,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Text = name,
 			Parent = btn,
 		})
 		BindText(label)
 
 		local page = New("Frame", {
-			Position = UDim2.fromOffset(0, 28),
-			Size = UDim2.new(1, 0, 1, -28),
+			Position = UDim2.fromOffset(0, PAGE_TITLE),
+			Size = UDim2.new(1, 0, 1, -PAGE_TITLE),
 			BackgroundTransparency = 1,
 			Visible = false,
 			Parent = Content,
@@ -781,6 +740,7 @@ function Lib:MakeWindow(Configs)
 		local pop = New("Frame", {
 			Position = UDim2.fromOffset(x, y),
 			Size = UDim2.fromOffset(width, height),
+			BackgroundTransparency = 0.05,
 			ZIndex = 41,
 			Parent = Overlay,
 		})
@@ -804,6 +764,9 @@ function Lib:MakeWindow(Configs)
 			New("UIPadding", {PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4)}),
 			New("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder}),
 		})
+		Bind(list, function()
+			list.ScrollBarImageColor3 = Th.Accent
+		end)
 
 		for index, item in ipairs(items) do
 			local row = New("TextButton", {
@@ -815,7 +778,7 @@ function Lib:MakeWindow(Configs)
 				ZIndex = 43,
 				Parent = list,
 			})
-			Corner(row, 4)
+			Corner(row, 3)
 			Bind(row, function()
 				row.BackgroundColor3 = Th.Accent
 			end)
@@ -824,7 +787,7 @@ function Lib:MakeWindow(Configs)
 				Size = UDim2.new(1, -12, 1, 0),
 				BackgroundTransparency = 1,
 				Font = Font.GothamBold,
-				TextSize = 11,
+				TextSize = 10,
 				TextXAlignment = AlignLeft,
 				Text = item.text,
 				ZIndex = 44,
@@ -850,12 +813,12 @@ function Lib:MakeWindow(Configs)
 
 	local Toast = New("TextLabel", {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -50),
+		Position = UDim2.new(0.5, 0, 1, -54),
 		Size = UDim2.fromOffset(0, 22),
 		AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundTransparency = 0.1,
+		BackgroundTransparency = 0.05,
 		Font = Font.GothamBold,
-		TextSize = 11,
+		TextSize = 10,
 		Text = "",
 		Visible = false,
 		ZIndex = 60,
@@ -863,7 +826,7 @@ function Lib:MakeWindow(Configs)
 	}, {
 		New("UIPadding", {PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12)}),
 	})
-	Corner(Toast, 6)
+	Corner(Toast, 5)
 	Stroke(Toast)
 	Bind(Toast, function()
 		Toast.BackgroundColor3 = Th.Hub2
@@ -891,21 +854,23 @@ function Lib:MakeWindow(Configs)
 	local Messages, Seen = {}, {}
 	local NextSend = 0
 
+	local INPUT_H, SEND_W, BOTTOM = 28, 60, 8
+
 	local Chip = New("Frame", {
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 6, 1, -40),
-		Size = UDim2.new(1, -12, 0, 18),
+		Position = UDim2.new(0, MARGIN, 1, -(BOTTOM + INPUT_H + 6)),
+		Size = UDim2.new(1, -MARGIN * 2, 0, 18),
 		Visible = false,
 		Parent = ChatPage,
 	})
-	Corner(Chip, 5)
-	BindAccent(Chip, 0.8)
+	Corner(Chip, 3)
+	BindSub(Chip, 0.75)
 
 	local ChipLabel = New("TextLabel", {
 		Position = UDim2.fromOffset(8, 0),
 		Size = UDim2.new(1, -30, 1, 0),
 		BackgroundTransparency = 1,
-		Font = Font.GothamBold,
+		Font = Font.GothamMedium,
 		TextSize = 10,
 		TextXAlignment = AlignLeft,
 		TextTruncate = Enum.TextTruncate.AtEnd,
@@ -914,21 +879,22 @@ function Lib:MakeWindow(Configs)
 	})
 	BindText(ChipLabel)
 
-	local ChipClose = New("TextButton", {
+	local ChipClose = New("ImageButton", {
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -3, 0.5, 0),
-		Size = UDim2.fromOffset(14, 14),
+		Position = UDim2.new(1, -4, 0.5, 0),
+		Size = UDim2.fromOffset(11, 11),
 		BackgroundTransparency = 1,
-		Text = "",
+		Image = "rbxassetid://10747384394",
 		AutoButtonColor = false,
 		Parent = Chip,
 	})
-	IconPart(ChipClose, UDim2.fromOffset(8, 1), UDim2.fromScale(0.5, 0.5), 45)
-	IconPart(ChipClose, UDim2.fromOffset(8, 1), UDim2.fromScale(0.5, 0.5), -45)
+	Bind(ChipClose, function()
+		ChipClose.ImageColor3 = Th.Dark
+	end)
 
 	local Scroll = New("ScrollingFrame", {
-		Position = UDim2.fromOffset(6, 2),
-		Size = UDim2.new(1, -12, 1, -38),
+		Position = UDim2.fromOffset(MARGIN, 2),
+		Size = UDim2.new(1, -MARGIN * 2, 1, -(BOTTOM + INPUT_H + 6)),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		ScrollBarThickness = 2,
@@ -937,15 +903,15 @@ function Lib:MakeWindow(Configs)
 		Parent = ChatPage,
 	}, {
 		New("UIPadding", {PaddingRight = UDim.new(0, 4)}),
-		New("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}),
+		New("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}),
 	})
 	Bind(Scroll, function()
 		Scroll.ScrollBarImageColor3 = Th.Accent
 	end)
 
 	local function ChatLayout()
-		local reserved = WriteTarget and 60 or 38
-		Scroll.Size = UDim2.new(1, -12, 1, -reserved)
+		local reserved = BOTTOM + INPUT_H + 6 + (WriteTarget and 22 or 0)
+		Scroll.Size = UDim2.new(1, -MARGIN * 2, 1, -reserved)
 		Chip.Visible = WriteTarget ~= nil
 	end
 
@@ -960,28 +926,33 @@ function Lib:MakeWindow(Configs)
 		SetTarget(nil)
 	end)
 
-	local InputBar = New("Frame", {
+	local InputRow = New("Frame", {
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 6, 1, -6),
-		Size = UDim2.new(1, -12, 0, 30),
+		Position = UDim2.new(0, MARGIN, 1, -BOTTOM),
+		Size = UDim2.new(1, -MARGIN * 2, 0, INPUT_H),
+		BackgroundTransparency = 1,
 		Parent = ChatPage,
 	})
-	Corner(InputBar, 6)
-	BindPanel(InputBar)
-	Stroke(InputBar)
+
+	local InputPanel = New("Frame", {
+		Size = UDim2.new(1, -(SEND_W + 6), 1, 0),
+		Parent = InputRow,
+	})
+	Corner(InputPanel, 3)
+	BindSub(InputPanel)
 
 	local Input = New("TextBox", {
 		Position = UDim2.fromOffset(10, 0),
-		Size = UDim2.new(1, -66, 1, 0),
+		Size = UDim2.new(1, -20, 1, 0),
 		BackgroundTransparency = 1,
-		Font = Font.Gotham,
-		TextSize = 12,
+		Font = Font.GothamMedium,
+		TextSize = 10,
 		TextXAlignment = AlignLeft,
 		ClearTextOnFocus = false,
 		ClipsDescendants = true,
 		PlaceholderText = "To chat click here or press / key",
 		Text = "",
-		Parent = InputBar,
+		Parent = InputPanel,
 	})
 	Bind(Input, function()
 		Input.TextColor3 = Th.Text
@@ -989,19 +960,23 @@ function Lib:MakeWindow(Configs)
 	end)
 
 	local SendButton = New("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -4, 0.5, 0),
-		Size = UDim2.fromOffset(48, 22),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.new(0, SEND_W, 1, 0),
 		Font = Font.GothamBold,
-		TextSize = 11,
+		TextSize = 10,
 		Text = "Send",
 		AutoButtonColor = false,
-		Parent = InputBar,
+		Parent = InputRow,
 	})
-	Corner(SendButton, 5)
-	Bind(SendButton, function()
-		SendButton.BackgroundColor3 = Th.Accent
-		SendButton.TextColor3 = Th.Text
+	Corner(SendButton, 3)
+	BindSub(SendButton)
+	BindText(SendButton)
+	Connect(SendButton.MouseEnter, function()
+		Tween(SendButton, {BackgroundTransparency = 0.7}, 0.15)
+	end)
+	Connect(SendButton.MouseLeave, function()
+		Tween(SendButton, {BackgroundTransparency = 0.85}, 0.15)
 	end)
 
 	local function ScrollToBottom()
@@ -1050,18 +1025,15 @@ function Lib:MakeWindow(Configs)
 			Parent = Scroll,
 		}, {
 			New("UIPadding", {
-				PaddingTop = UDim.new(0, 5),
-				PaddingBottom = UDim.new(0, 6),
-				PaddingLeft = UDim.new(0, 8),
-				PaddingRight = UDim.new(0, 8),
+				PaddingTop = UDim.new(0, 6),
+				PaddingBottom = UDim.new(0, 7),
+				PaddingLeft = UDim.new(0, 10),
+				PaddingRight = UDim.new(0, 10),
 			}),
-			New("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder}),
+			New("UIListLayout", {Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder}),
 		})
-		Corner(item, 5)
-		BindPanel(item)
-		if m.to then
-			Stroke(item, "Accent")
-		end
+		Corner(item, 3)
+		BindSub(item, m.to and 0.7 or 0.85)
 
 		local header = New("Frame", {
 			LayoutOrder = 1,
@@ -1096,13 +1068,13 @@ function Lib:MakeWindow(Configs)
 				Size = UDim2.fromOffset(0, 14),
 				AutomaticSize = Enum.AutomaticSize.X,
 				BackgroundTransparency = 1,
-				Font = Font.GothamBold,
-				TextSize = 10,
+				Font = Font.GothamMedium,
+				TextSize = 9,
 				RichText = false,
-				Text = mine and ("-> " .. tostring(m.toDisplay or "Player")) or "whisper to you",
+				Text = mine and ("to " .. tostring(m.toDisplay or "Player")) or "whisper to you",
 				Parent = header,
 			})
-			BindText(tag, "Accent")
+			BindText(tag, "Dark")
 		end
 
 		local time = New("TextLabel", {
@@ -1110,8 +1082,8 @@ function Lib:MakeWindow(Configs)
 			Size = UDim2.fromOffset(0, 14),
 			AutomaticSize = Enum.AutomaticSize.X,
 			BackgroundTransparency = 1,
-			Font = Font.GothamMedium,
-			TextSize = 10,
+			Font = Font.Gotham,
+			TextSize = 9,
 			Text = FormatTime(tonumber(m.ts) or os.time() * 1000),
 			Parent = header,
 		})
@@ -1147,8 +1119,8 @@ function Lib:MakeWindow(Configs)
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			BackgroundTransparency = 1,
-			Font = Font.Gotham,
-			TextSize = 12,
+			Font = Font.GothamMedium,
+			TextSize = 11,
 			TextWrapped = true,
 			RichText = false,
 			TextXAlignment = AlignLeft,
@@ -1262,8 +1234,13 @@ function Lib:MakeWindow(Configs)
 		CanvasSize = UDim2.new(),
 		Parent = SettingsPage,
 	}, {
-		New("UIPadding", {PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 10), PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 6)}),
-		New("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}),
+		New("UIPadding", {
+			PaddingLeft = UDim.new(0, MARGIN),
+			PaddingRight = UDim.new(0, MARGIN),
+			PaddingTop = UDim.new(0, 2),
+			PaddingBottom = UDim.new(0, 8),
+		}),
+		New("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}),
 	})
 	Bind(SettingsScroll, function()
 		SettingsScroll.ScrollBarImageColor3 = Th.Accent
@@ -1274,18 +1251,17 @@ function Lib:MakeWindow(Configs)
 		rowOrder = rowOrder + 1
 		local row = New("Frame", {
 			LayoutOrder = rowOrder,
-			Size = UDim2.new(1, 0, 0, 34),
+			Size = UDim2.new(1, 0, 0, 25),
 			Parent = SettingsScroll,
 		})
-		Corner(row, 5)
-		BindPanel(row)
-		Stroke(row)
+		Corner(row, 3)
+		BindSub(row)
 		local label = New("TextLabel", {
 			Position = UDim2.fromOffset(10, 0),
 			Size = UDim2.new(0.4, 0, 1, 0),
 			BackgroundTransparency = 1,
-			Font = Font.GothamBold,
-			TextSize = 11,
+			Font = Font.GothamMedium,
+			TextSize = 10,
 			TextXAlignment = AlignLeft,
 			Text = title,
 			Parent = row,
@@ -1297,17 +1273,18 @@ function Lib:MakeWindow(Configs)
 	local ThemeRow = Row("Theme")
 	local ThemeButton = New("TextButton", {
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -8, 0.5, 0),
-		Size = UDim2.fromOffset(150, 20),
+		Position = UDim2.new(1, -10, 0.5, 0),
+		Size = UDim2.fromOffset(150, 18),
 		Text = "",
 		AutoButtonColor = false,
 		Parent = ThemeRow,
 	})
 	Corner(ThemeButton, 4)
-	BindAccent(ThemeButton, 0.85)
+	BindSub(ThemeButton)
 	local ThemeLabel = New("TextLabel", {
-		Position = UDim2.fromOffset(8, 0),
-		Size = UDim2.new(1, -28, 1, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 8, 0.5, 0),
+		Size = UDim2.new(1, -28, 0.85, 0),
 		BackgroundTransparency = 1,
 		Font = Font.GothamBold,
 		TextSize = 10,
@@ -1318,7 +1295,7 @@ function Lib:MakeWindow(Configs)
 	BindText(ThemeLabel)
 	New("ImageLabel", {
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -6, 0.5, 0),
+		Position = UDim2.new(1, -8, 0.5, 0),
 		Size = UDim2.fromOffset(14, 14),
 		BackgroundTransparency = 1,
 		Image = "rbxassetid://10709790948",
@@ -1354,7 +1331,7 @@ function Lib:MakeWindow(Configs)
 	local SliderRow = Row("Transparency")
 	local ValueLabel = New("TextLabel", {
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -8, 0.5, 0),
+		Position = UDim2.new(1, -10, 0.5, 0),
 		Size = UDim2.fromOffset(34, 14),
 		BackgroundTransparency = 1,
 		Font = Font.GothamBold,
@@ -1367,8 +1344,8 @@ function Lib:MakeWindow(Configs)
 
 	local Track = New("Frame", {
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -48, 0.5, 0),
-		Size = UDim2.fromOffset(110, 4),
+		Position = UDim2.new(1, -50, 0.5, 0),
+		Size = UDim2.fromOffset(106, 4),
 		BorderSizePixel = 0,
 		Parent = SliderRow,
 	})
@@ -1382,7 +1359,9 @@ function Lib:MakeWindow(Configs)
 		Parent = Track,
 	})
 	Corner(Fill, 2)
-	BindAccent(Fill)
+	Bind(Fill, function()
+		Fill.BackgroundColor3 = Th.Accent
+	end)
 	local Knob = New("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0, 0.5),
@@ -1447,19 +1426,19 @@ function Lib:MakeWindow(Configs)
 		local row = Row(title)
 		local swatch = New("Frame", {
 			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, -8, 0.5, 0),
-			Size = UDim2.fromOffset(18, 18),
+			Position = UDim2.new(1, -10, 0.5, 0),
+			Size = UDim2.fromOffset(14, 14),
 			BackgroundColor3 = ParseColor(S[key]) or WHITE,
 			BorderSizePixel = 0,
 			Parent = row,
 		})
-		Corner(swatch, 4)
+		Corner(swatch, 3)
 		Stroke(swatch)
 
 		local box = New("TextBox", {
 			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, -32, 0.5, 0),
-			Size = UDim2.fromOffset(118, 20),
+			Position = UDim2.new(1, -30, 0.5, 0),
+			Size = UDim2.fromOffset(120, 18),
 			Font = Font.GothamBold,
 			TextSize = 10,
 			ClearTextOnFocus = false,
@@ -1468,7 +1447,7 @@ function Lib:MakeWindow(Configs)
 			Parent = row,
 		})
 		Corner(box, 4)
-		BindAccent(box, 0.85)
+		BindSub(box)
 		Bind(box, function()
 			box.TextColor3 = Th.Text
 			box.PlaceholderColor3 = Th.Dark
@@ -1494,12 +1473,71 @@ function Lib:MakeWindow(Configs)
 		ApplyScale()
 	end
 
+	local Grip = New("TextButton", {
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.fromScale(1, 1),
+		Size = UDim2.fromOffset(16, 16),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 20,
+		Parent = Main,
+	})
+	for _, spec in ipairs({{12, 0.5}, {6, 0.72}}) do
+		local line = New("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(spec[2], spec[2]),
+			Size = UDim2.fromOffset(spec[1], 1),
+			Rotation = -45,
+			BorderSizePixel = 0,
+			ZIndex = 21,
+			Parent = Grip,
+		})
+		Bind(line, function()
+			line.BackgroundColor3 = Th.Dark
+		end)
+	end
+
+	local resizing, resizeStart, resizeW, resizeH
+	Connect(Grip.InputBegan, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			resizing = true
+			resizeStart = input.Position
+			resizeW, resizeH = W, H
+			CloseOverlay()
+			local c
+			c = input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					resizing = false
+					c:Disconnect()
+					Cfg.size = {W, H}
+					SaveSoon()
+				end
+			end)
+		end
+	end)
+	Connect(UserInputService.InputChanged, function(input)
+		if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = (input.Position - resizeStart) / MainScale.Scale
+			local newW = math.clamp(resizeW + d.X, MIN_W, MAX_W)
+			local newH = math.clamp(resizeH + d.Y, MIN_H, MAX_H)
+			local dw, dh = newW - W, newH - H
+			if dw ~= 0 or dh ~= 0 then
+				W, H = newW, newH
+				Main.Size = UDim2.fromOffset(W, H)
+				Main.Position = Main.Position + UDim2.fromOffset(dw * MainScale.Scale / 2, dh * MainScale.Scale / 2)
+			end
+		end
+	end)
+
 	local Collapsed = false
 	function Window:Minimize()
 		Collapsed = not Collapsed
 		CloseOverlay()
 		Body.Visible = not Collapsed
-		Tween(Main, {Size = UDim2.fromOffset(W, Collapsed and (TOP + 1) or H)}, 0.25)
+		Grip.Visible = not Collapsed
+		MinButton.Image = Collapsed and "rbxassetid://10734924532" or "rbxassetid://10734896206"
+		Tween(Main, {Size = UDim2.fromOffset(W, Collapsed and TOP or H)}, 0.25)
 	end
 
 	function Window:Toggle()
@@ -1516,21 +1554,194 @@ function Lib:MakeWindow(Configs)
 		Gui:Destroy()
 	end
 
+	function Window:Dialog(Cfg2)
+		Cfg2 = Cfg2 or {}
+		if Main:FindFirstChild("Dialog") then
+			return
+		end
+		if Collapsed then
+			Window:Minimize()
+		end
+		CloseOverlay()
+
+		local title = Cfg2.Title or Cfg2[1] or "Dialog"
+		local text = Cfg2.Text or Cfg2[2] or ""
+		local options = Cfg2.Options or Cfg2[3] or {}
+		local baseW, baseH = 270, 160
+
+		local Screen = New("Frame", {
+			Name = "Dialog",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Active = true,
+			ZIndex = 80,
+			Parent = Main,
+		})
+		Corner(Screen, 7)
+		Bind(Screen, function()
+			Screen.BackgroundColor3 = Th.Stroke
+		end)
+
+		local Frame = New("Frame", {
+			Active = true,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(baseW * 1.06, baseH * 1.06),
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 0.08,
+			ClipsDescendants = true,
+			Parent = Screen,
+		})
+		local FrameGradient = New("UIGradient", {Rotation = 270, Parent = Frame})
+		Corner(Frame, 7)
+		Bind(Frame, function()
+			FrameGradient.Color = Th.Hub1
+		end)
+
+		local DialogTop = New("Frame", {
+			Size = UDim2.new(1, 0, 0, 36),
+			BackgroundTransparency = 1,
+			Parent = Frame,
+		})
+		local icon = New("ImageLabel", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 12, 0.5, 0),
+			Size = UDim2.fromOffset(16, 16),
+			BackgroundTransparency = 1,
+			Image = "rbxassetid://10723415903",
+			Parent = DialogTop,
+		})
+		Bind(icon, function()
+			icon.ImageColor3 = Th.Accent
+		end)
+		local titleLabel = New("TextLabel", {
+			Position = UDim2.fromOffset(34, 0),
+			Size = UDim2.new(1, -80, 1, 0),
+			BackgroundTransparency = 1,
+			Font = Font.GothamBold,
+			TextSize = 13,
+			TextXAlignment = AlignLeft,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Text = title,
+			Parent = DialogTop,
+		})
+		BindText(titleLabel)
+
+		local XBtn = New("ImageButton", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -10, 0.5, 0),
+			Size = UDim2.fromOffset(14, 14),
+			BackgroundTransparency = 1,
+			Image = "rbxassetid://10747384394",
+			AutoButtonColor = false,
+			Parent = DialogTop,
+		})
+		Bind(XBtn, function()
+			XBtn.ImageColor3 = Th.Dark
+		end)
+
+		local divider = New("Frame", {
+			Position = UDim2.fromOffset(12, 36),
+			Size = UDim2.new(1, -24, 0, 1),
+			BorderSizePixel = 0,
+			Parent = Frame,
+		})
+		BindSub(divider, 0.75)
+
+		local body = New("TextLabel", {
+			Position = UDim2.fromOffset(12, 44),
+			Size = UDim2.new(1, -24, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Font = Font.GothamMedium,
+			TextSize = 11,
+			TextWrapped = true,
+			TextXAlignment = AlignLeft,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			Text = text,
+			Parent = Frame,
+		})
+		BindText(body, "Dark")
+
+		local Holder = New("Frame", {
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.new(0, 10, 1, -10),
+			Size = UDim2.new(1, -20, 0, 28),
+			BackgroundTransparency = 1,
+			Parent = Frame,
+		}, {
+			New("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				Padding = UDim.new(0, 8),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
+		})
+
+		Tween(Frame, {Size = UDim2.fromOffset(baseW, baseH)}, 0.25)
+		Tween(Screen, {BackgroundTransparency = 0.35}, 0.15)
+
+		local closed = false
+		local function CloseDialog()
+			if closed then
+				return
+			end
+			closed = true
+			Tween(Frame, {Size = UDim2.fromOffset(baseW * 1.06, baseH * 1.06)}, 0.2)
+			Tween(Screen, {BackgroundTransparency = 1}, 0.15)
+			task.delay(0.2, function()
+				Screen:Destroy()
+			end)
+		end
+
+		Connect(XBtn.Activated, CloseDialog)
+		Connect(XBtn.MouseEnter, function()
+			Tween(XBtn, {ImageColor3 = Color3.fromRGB(255, 80, 80)}, 0.15)
+		end)
+		Connect(XBtn.MouseLeave, function()
+			Tween(XBtn, {ImageColor3 = Th.Dark}, 0.15)
+		end)
+
+		local count = #options
+		for index, option in ipairs(options) do
+			local label = option[1] or option.Name or ""
+			local callback = option[2] or option.Callback
+			local btn = New("TextButton", {
+				LayoutOrder = index,
+				Size = UDim2.new(1 / count, -((count - 1) * 8) / count, 1, 0),
+				Font = Font.GothamBold,
+				TextSize = 11,
+				Text = label,
+				AutoButtonColor = false,
+				Parent = Holder,
+			})
+			Corner(btn, 5)
+			BindSub(btn, 0.7)
+			BindText(btn)
+			Connect(btn.Activated, function()
+				CloseDialog()
+				if callback then
+					callback()
+				end
+			end)
+		end
+	end
+
 	Connect(MinButton.Activated, function()
 		Window:Minimize()
 	end)
 	Connect(CloseButton.Activated, function()
-		if FloatButton then
-			Main.Visible = false
-		else
-			Window:Destroy()
-		end
-	end)
-	Connect(DotsButton.Activated, function()
-		if Collapsed then
-			Window:Minimize()
-		end
-		SelectTab(CurrentTab == "Settings" and "Chat" or "Settings")
+		Window:Dialog({
+			Title = "Close",
+			Text = "Do you want to close Community Lib? The UI will be removed completely.",
+			Options = {
+				{"Confirm", function()
+					Window:Destroy()
+				end},
+				{"Cancel"},
+			},
+		})
 	end)
 
 	function Window:SelectTab(name)
@@ -1543,7 +1754,7 @@ function Lib:MakeWindow(Configs)
 		Cfg2 = Cfg2 or {}
 		local tag = New("Frame", {
 			LayoutOrder = 3,
-			Size = UDim2.fromOffset(0, 14),
+			Size = UDim2.fromOffset(0, 16),
 			AutomaticSize = Enum.AutomaticSize.X,
 			BackgroundColor3 = Cfg2.Color or WHITE,
 			BorderSizePixel = 0,
@@ -1553,7 +1764,7 @@ function Lib:MakeWindow(Configs)
 		})
 		Corner(tag, 4)
 		local label = New("TextLabel", {
-			Size = UDim2.fromOffset(0, 14),
+			Size = UDim2.fromOffset(0, 16),
 			AutomaticSize = Enum.AutomaticSize.X,
 			BackgroundTransparency = 1,
 			Font = Font.GothamBold,

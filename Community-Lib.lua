@@ -218,15 +218,37 @@ local function MakeNet(settings, handlers)
 		elseif data.t == "msg" and data.m then
 			lastId = math.max(lastId, data.m.id or 0)
 			handlers.msg(data.m)
+		elseif data.t == "online" then
+			handlers.online(tonumber(data.n))
 		elseif data.t == "err" then
 			handlers.err(data)
 		end
+	end
+
+	local lastWake = 0
+
+	function Net:Wake(force)
+		if not force and os.clock() - lastWake < 20 then
+			return
+		end
+		lastWake = os.clock()
+		task.spawn(function()
+			local url = baseUrl() .. "/health"
+			if request then
+				pcall(request, {Url = url, Method = "GET"})
+			else
+				pcall(function()
+					return game:HttpGet(url)
+				end)
+			end
+		end)
 	end
 
 	local function runSocket()
 		local ok, sock = pcall(connectWS, settings.Server)
 		if not ok or not sock then
 			failures = failures + 1
+			Net:Wake()
 			return false
 		end
 		failures = 0
@@ -258,27 +280,48 @@ local function MakeNet(settings, handlers)
 					lastId = math.max(lastId, m.id or 0)
 					handlers.msg(m)
 				end
+				if data.online then
+					handlers.online(tonumber(data.online))
+				end
 				handlers.status(true)
 				return
 			end
 		end
 		handlers.status(false)
+		Net:Wake()
 	end
 
+	local pollCount = 0
+
 	task.spawn(function()
+		Net:Wake(true)
 		while Net.Alive do
 			if connectWS and failures < 3 then
 				Net.Mode = "ws"
 				runSocket()
-				task.wait(2)
+				task.wait(failures > 0 and 4 or 2)
 			elseif request then
 				Net.Mode = "http"
 				runPoll()
+				pollCount = pollCount + 1
+				if connectWS and pollCount >= 30 then
+					pollCount = 0
+					failures = 2
+				end
 				task.wait(2)
 			else
 				Net.Mode = nil
 				handlers.status(false)
 				task.wait(5)
+			end
+		end
+	end)
+
+	task.spawn(function()
+		while Net.Alive do
+			task.wait(300)
+			if Net.Alive then
+				Net:Wake(true)
 			end
 		end
 	end)
@@ -289,6 +332,7 @@ local function MakeNet(settings, handlers)
 				socket:Send(HttpService:JSONEncode(payload))
 			end)
 		end
+		Net:Wake()
 		if Net.Mode == "http" and request then
 			task.spawn(function()
 				local body = hello()
@@ -309,6 +353,8 @@ local function MakeNet(settings, handlers)
 					if good and data and data.err then
 						handlers.err({reason = data.err, wait = data.wait})
 					end
+				else
+					handlers.err({reason = "offline"})
 				end
 			end)
 			return true
@@ -1167,7 +1213,7 @@ function Lib:MakeWindow(Configs)
 			fc = S.FontColor,
 		})
 		if not ok then
-			Notify("Offline")
+			Notify("Server is waking up, try again in a minute")
 			return
 		end
 
@@ -1206,12 +1252,32 @@ function Lib:MakeWindow(Configs)
 		end
 	end)
 
+	local LinkOnline, OnlineCount = nil, nil
+
+	local function ShowStatus()
+		if LinkOnline == nil then
+			StatusLabel.Text = "Connecting..."
+		elseif LinkOnline then
+			StatusLabel.Text = OnlineCount and (OnlineCount .. " online") or "Online"
+		else
+			StatusLabel.Text = "Offline, waking server..."
+		end
+	end
+
 	Net = MakeNet(S, {
 		msg = function(m)
 			AddMessage(m)
 		end,
 		status = function(online)
-			StatusLabel.Text = online and "Online" or "Offline"
+			LinkOnline = online
+			if not online then
+				OnlineCount = nil
+			end
+			ShowStatus()
+		end,
+		online = function(count)
+			OnlineCount = count
+			ShowStatus()
 		end,
 		err = function(data)
 			if data.reason == "cooldown" then
@@ -1219,6 +1285,8 @@ function Lib:MakeWindow(Configs)
 				Notify("Wait " .. tostring(data.wait or S.MessageCooldown) .. "s")
 			elseif data.reason == "auth" then
 				Notify("Server rejected the token")
+			elseif data.reason == "offline" then
+				Notify("Server is waking up, try again in a minute")
 			else
 				Notify("Message not sent")
 			end

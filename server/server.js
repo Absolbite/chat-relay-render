@@ -13,7 +13,29 @@ const MAX_LEN = 200;
 const messages = [];
 const lastSent = new Map();
 const sockets = new Set();
+const pollers = new Map();
 let nextId = 1;
+let lastOnline = -1;
+
+function onlineCount() {
+	const ids = new Set();
+	for (const ws of sockets) if (ws.readyState === 1 && ws.uid) ids.add(ws.uid);
+	const limit = Date.now() - 10000;
+	for (const [uid, ts] of pollers) {
+		if (ts < limit) pollers.delete(uid);
+		else ids.add(uid);
+	}
+	return ids.size;
+}
+
+function broadcastOnline(force) {
+	const n = onlineCount();
+	if (!force && n === lastOnline) return n;
+	lastOnline = n;
+	const out = JSON.stringify({ t: "online", n });
+	for (const ws of sockets) if (ws.readyState === 1 && ws.uid) ws.send(out);
+	return n;
+}
 
 const clean = (value, max) =>
 	Array.from(
@@ -80,7 +102,7 @@ const server = http.createServer((req, res) => {
 		res.end(JSON.stringify(data));
 	};
 
-	if (url.pathname === "/health") return reply(200, { ok: true });
+	if (url.pathname === "/health") return reply(200, { ok: true, online: onlineCount() });
 
 	if (req.method === "GET" && url.pathname === "/poll") {
 		if (TOKEN && url.searchParams.get("token") !== TOKEN) return reply(403, { err: "auth" });
@@ -88,9 +110,10 @@ const server = http.createServer((req, res) => {
 		const after = Number(url.searchParams.get("after")) || 0;
 		if (!Number.isSafeInteger(uid) || uid <= 0) return reply(400, { err: "uid" });
 
+		pollers.set(uid, Date.now());
 		const list = after === 0 ? historyFor(uid) : messages.filter((m) => m.id > after && visibleTo(m, uid));
 		const last = messages.length ? messages[messages.length - 1].id : 0;
-		return reply(200, { msgs: list, last });
+		return reply(200, { msgs: list, last, online: onlineCount() });
 	}
 
 	if (req.method === "POST" && url.pathname === "/send") {
@@ -141,6 +164,7 @@ wss.on("connection", (ws) => {
 			ws.name = d.name;
 			ws.token = d.token;
 			ws.send(JSON.stringify({ t: "history", msgs: historyFor(uid) }));
+			broadcastOnline(true);
 			return;
 		}
 
@@ -150,9 +174,15 @@ wss.on("connection", (ws) => {
 		}
 	});
 
-	ws.on("close", () => sockets.delete(ws));
-	ws.on("error", () => sockets.delete(ws));
+	const drop = () => {
+		sockets.delete(ws);
+		broadcastOnline(false);
+	};
+	ws.on("close", drop);
+	ws.on("error", drop);
 });
+
+setInterval(() => broadcastOnline(false), 5000);
 
 setInterval(() => {
 	for (const ws of sockets) {
